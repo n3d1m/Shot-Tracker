@@ -37,7 +37,7 @@ else:
 
 initBB = None
 circleFound = False
-cap = cv.VideoCapture("test.mp4")
+cap = cv.VideoCapture("../shots_mp4/v1.mp4")
 
 while True:
     ret, frame = cap.read()
@@ -63,7 +63,7 @@ while True:
             # circle outline
             radius = i[2]
             # circle = cv.circle(frame, center, radius, (255, 0, 255), 3)
-            initBB = (i[0]-radius, i[1]-radius, radius*2, radius*2)
+            initBB = (i[0]-radius, i[1]-radius, radius*2.25, radius*2.25)
             tracker.init(frame, initBB)
             circleFound = True
             # cv.imshow("video", frame)
