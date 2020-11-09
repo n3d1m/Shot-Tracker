@@ -1,7 +1,7 @@
+import imutils
 from imutils.video import VideoStream
 from imutils.video import FPS
 import argparse
-import imutils
 import time
 import cv2 as cv
 import numpy as np
@@ -12,7 +12,8 @@ import numpy as np
 # Set up tracker.
 # Instead of MIL, you can also use
 
-tracker_types = ['BOOSTING', 'MIL', 'KCF', 'TLD', 'MEDIANFLOW', 'GOTURN', 'MOSSE', 'CSRT']
+tracker_types = ['BOOSTING', 'MIL', 'KCF', 'TLD',
+                 'MEDIANFLOW', 'GOTURN', 'MOSSE', 'CSRT']
 tracker_type = tracker_types[7]
 
 if int(minor_ver) < 3:
@@ -37,7 +38,7 @@ else:
 
 initBB = None
 circleFound = False
-cap = cv.VideoCapture("../shots_mp4/v1.mp4")
+cap = cv.VideoCapture("test.mp4")
 
 while True:
     ret, frame = cap.read()
@@ -51,7 +52,7 @@ while True:
                               minRadius=15, maxRadius=25)
 
     if circles is not None and circleFound is False:
-        circles = np.uint16(np.around(circles))
+        circles = np.array(np.uint16(np.around(circles)))
         # circles = np.append(circles, 1)
         print(circles)
         # initBB = tuple(circles)
