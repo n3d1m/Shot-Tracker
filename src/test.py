@@ -1,8 +1,10 @@
 import imutils
 from imutils.video import VideoStream
 from imutils.video import FPS
+from shapely.geometry import Polygon
 import argparse
 import time
+import math
 import cv2 as cv
 import numpy as np
 
@@ -115,13 +117,56 @@ def findBall(gray_frame, rows):
         return None
 
 
+def get_overlap(box_1, box_2):
+    # area_1 = float((box_1[2] - box_1[0]) * box_1[3] - box_1[1])
+    # area_2 = float((box_2[2] - box_2[0]) * box_2[3] - box_2[1])
+
+    width = calculate_intersection(box_1[0], box_1[2], box_2[0], box_2[2])
+    height = calculate_intersection(box_1[1], box_1[3], box_2[1], box_2[3])
+
+    area_delta = width * height
+
+    return area_delta
+
+
+def calculate_intersection(a0, a1, b0, b1):
+    if a0 >= b0 and a1 <= b1:  # Contained
+        intersection = a1 - a0
+    elif a0 < b0 and a1 > b1:  # Contains
+        intersection = b1 - b0
+    elif a0 < b0 < a1:  # Intersects right
+        intersection = a1 - b0
+    elif a1 > b1 > a0:  # Intersects left
+        intersection = b1 - a0
+    else:  # No intersection (either side)
+        intersection = 0
+
+    return intersection
+
+
+def calculate_angle(box1, box2):
+    point1 = [(box1[0] + box1[2])/2, box1[3]]
+    point2 = [(box2[0] + box2[2]) / 2, box2[1]]
+    angle_rad = math.atan2(point2[1] - point1[1], point2[0] - point1[0])
+    angle = math.degrees(angle_rad)
+    print(angle)
+
+
 cap = cv.VideoCapture("test.mp4")
+overlap_values = []
 
 while True:
     success, img = cap.read()
+    key = cv.waitKey(1)
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
     gray = cv.medianBlur(gray, 5)
     rows = gray.shape[0]
+
+    if key == ord('p'):
+        cv.waitKey(-1)  # wait until any key is pressed
+
+    if cv.waitKey(1) == 27:  # esc Key
+        break
 
     # person detection block
     if personFound is False:
@@ -144,6 +189,7 @@ while True:
         p1 = (int(initBB_person[0]), int(initBB_person[1]))
         p2 = (int(initBB_person[0] + initBB_person[2]), int(initBB_person[1] + initBB_person[3]))
         cv.rectangle(img, p1, p2, (255, 0, 0), 2, 1)
+        rect_person = [p1[0], p1[1], p2[0], p2[1]]
 
     # ball detection block
     if circleFound is False:
@@ -161,10 +207,29 @@ while True:
         p1 = (int(initBB_ball[0]), int(initBB_ball[1]))
         p2 = (int(initBB_ball[0] + initBB_ball[2]), int(initBB_ball[1] + initBB_ball[3]))
         cv.rectangle(img, p1, p2, (255, 0, 0), 2, 1)
+        rect_ball = [p1[0], p1[1], p2[0], p2[1]]
 
     cv.imshow('Image', img)
-    if cv.waitKey(1) == 27:  # esc Key
-        break
+
+    # This is where most of the analysis is done
+    if circleFound and personFound:
+
+        overlap = get_overlap(rect_person, rect_ball)
+
+        if len(overlap_values) < 3:
+            overlap_values.append(overlap)
+        else:
+            overlap_values = overlap_values[1:]
+            overlap_values.append(overlap)
+
+        if sum(overlap_values) == 0:
+            calculate_angle(rect_ball, rect_person)
+            cv.waitKey(-1)
+
+        # box1 = rect_ball
+        # box2 = rect_person
+        # overlap_bool = overlap(box1, box2)
+        # print(overlap_percentage)
 
 cap.release()
 cv.destroyAllWindows()
