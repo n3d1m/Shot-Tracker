@@ -65,6 +65,9 @@ initBB_ball = None
 initBB_person = None
 circleFound = False
 personFound = False
+shotLaunched = False
+
+outputs = []
 
 
 def findPerson(outputs, img):
@@ -149,7 +152,7 @@ def calculate_angle(box1, box2):
     point2 = [(box2[0] + box2[2]) / 2, box2[1]]
     angle_rad = math.atan2(point2[1] - point1[1], point2[0] - point1[0])
     angle = math.degrees(angle_rad)
-    print(angle)
+    return  angle
 
 
 cap = cv.VideoCapture("test.mp4")
@@ -222,8 +225,11 @@ while True:
             overlap_values = overlap_values[1:]
             overlap_values.append(overlap)
 
-        if sum(overlap_values) == 0:
-            calculate_angle(rect_ball, rect_person)
+
+        if sum(overlap_values) == 0 and shotLaunched is False:
+            angle = calculate_angle(rect_ball, rect_person)
+            outputs.append(angle)
+            shotLaunched = True
             cv.waitKey(-1)
 
         # box1 = rect_ball
