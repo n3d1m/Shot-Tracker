@@ -132,13 +132,37 @@ def calculate_angle(box1, box2):
     return angle_val
 
 
+def calculate_shot_values(f_count, fps, height_arr, h_l, conversion):
+    distance = 4.572  # distance of free throw in meters
+    gravity = 9.81
+    time_val = f_count / fps
+    h_max = min(height_arr)
+    h_delta = abs(h_max - h_l) * conversion
+
+    v_x = distance / time_val
+    v_y = math.sqrt(2 * gravity * h_delta)
+    v_delta = math.sqrt(math.pow(v_x, 2) + math.pow(v_y, 2))
+    theta = math.degrees(math.atan2(v_y, v_x))
+
+    return {
+        'V_x': v_x,
+        'V_y': v_y,
+        'V': v_delta,
+        'Theta': theta
+         }
+
+
 def rim_width(box):
     width = 0.46
+    height = 3.048
     x_1 = box[0]
     x_2 = box[2]
-    distance = abs(x_1 - x_2)*0.5
+    distance = abs(x_1 - x_2) * 0.8
     conversion = width / distance
-    return conversion
+    rim_height = height / conversion
+    y_bottom = round(box[1] + rim_height)
+
+    return conversion, y_bottom
 
 
 def velocity_calc(arr, fps, pix_convert):
@@ -155,7 +179,8 @@ def velocity_calc(arr, fps, pix_convert):
 
 
 cap = cv.VideoCapture('test.mp4')
-overlap_values = []
+overlap_values_person = []
+overlap_values_rim = []
 outputs = []
 FPS = None
 ballFound = False
@@ -166,12 +191,15 @@ initBB_person = None
 initBB_rim = None
 shotLaunched = False
 pixel_to_distance = None
+bottom_y = None
+h_launch = None
 frame_count = 0
 ball_positions = []
+hit_rim = False
 
 while True:
     success, img = cap.read()
-    start_time = time.time()
+    # start_time = time.time()
 
     if ballFound is False or personFound is False or rimFound is False:
 
@@ -185,7 +213,7 @@ while True:
                 tracker_ball.init(img, initBB_ball)
                 ballFound = True
             if (object_label == 'shoot' or object_label == 'walk') and personFound is False:
-                initBB_person = (object_params[0], object_params[1] - 100, object_params[2], object_params[3] * 1.1)
+                initBB_person = (object_params[0], object_params[1] - 100, object_params[2], object_params[3] * 1.9)
                 tracker_person.init(img, initBB_person)
                 personFound = True
             if object_label == 'basket' and rimFound is False:
@@ -219,38 +247,55 @@ while True:
 
         # pixel conversion based on rim width happens here
         if pixel_to_distance is None:
-            pixel_to_distance = rim_width(rect_rim)
+            pixel_to_distance, bottom_y = rim_width(rect_rim)
 
     # This is where most of the analysis is done
     if ballFound and personFound:
 
-        overlap = get_overlap(rect_person, rect_ball)
+        overlap1 = get_overlap(rect_person, rect_ball)
 
-        if len(overlap_values) < 5:
-            overlap_values.append(overlap)
+        if len(overlap_values_person) < 1:
+            overlap_values_person.append(overlap1)
         else:
-            overlap_values = overlap_values[1:]
-            overlap_values.append(overlap)
+            overlap_values_person = overlap_values_person[1:]
+            overlap_values_person.append(overlap1)
 
         person_bottom = rect_person[3]
         ball_top = rect_ball[1]
 
-        if sum(overlap_values) == 0 and shotLaunched is False and person_bottom > ball_top:
-            angle = calculate_angle(rect_ball, rect_person)
-            outputs.append(angle)
+        if sum(overlap_values_person) == 0 and shotLaunched is False and person_bottom > ball_top:
+            # angle = calculate_angle(rect_ball, rect_person)
+            # outputs.append(angle)
             shotLaunched = True
-            print('SHOT LAUNCHED')
+            h_launch = bottom_y - rect_ball[3]
+            print('SHOT LAUNCHED', bottom_y, rect_ball)
 
         if shotLaunched:
-            frame_count += 1
-            ball_positions.append(rect_ball)
+            if hit_rim is False:
+                frame_count += 1
+                ball_positions.append(rect_ball[3])
 
-            if frame_count == 2:
-                velocity_calc(ball_positions, FPS, pixel_to_distance)
+            overlap2 = get_overlap(rect_rim, rect_ball)
+
+            if len(overlap_values_person) < 3:
+                overlap_values_rim.append(overlap2)
+            else:
+                overlap_values_rim = overlap_values_rim[1:]
+                overlap_values_rim.append(overlap2)
+
+            if sum(overlap_values_rim) != 0:
+                FPS = cap.get(cv.CAP_PROP_FPS)
+                print(ball_positions, frame_count, FPS)
+                hit_rim = True
+                parameters = calculate_shot_values(frame_count, FPS, ball_positions, h_launch, pixel_to_distance)
+                print(parameters)
                 cv.waitKey(-1)
 
+            # if frame_count == 2:
+            #     velocity_calc(ball_positions, FPS, pixel_to_distance)
+            #     cv.waitKey(-1)
+
     cv.imshow("basketball", img)
-    FPS = 1.0 / (time.time() - start_time)
     # cv.waitKey(0)
     if cv.waitKey(1) == 27:  # esc Key
         break
