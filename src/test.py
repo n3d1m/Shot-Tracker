@@ -1,12 +1,8 @@
-import imutils
-from imutils.video import VideoStream
-from imutils.video import FPS
-from shapely.geometry import Polygon
-import argparse
-import time
-import math
 import cv2 as cv
 import numpy as np
+import math
+import time
+import sys
 
 (major_ver, minor_ver) = cv.__version__.split(".")[:2]
 
@@ -20,6 +16,7 @@ tracker_type = tracker_types[7]
 if int(minor_ver) < 3:
     tracker_person = cv.Tracker_create(tracker_type)
     tracker_ball = cv.Tracker_create(tracker_type)
+    tracker_rim = cv.Tracker_create(tracker_type)
 else:
     if tracker_type == 'BOOSTING':
         tracker_person = cv.TrackerBoosting_create()
@@ -45,62 +42,49 @@ else:
     if tracker_type == "CSRT":
         tracker_person = cv.TrackerCSRT_create()
         tracker_ball = cv.TrackerCSRT_create()
-
-whT = 320
-confThreshold = 0.5
-nmsThreshold = 0.2
-classesFile = "../yolo/coco.names"
-classNames = []
-with open(classesFile, 'rt') as f:
-    classNames = f.read().rstrip('\n').split('\n')
-
-## Model Files
-modelConfiguration = "../yolo/darknet/cfg/yolov3.cfg"
-modelWeights = "../yolo/darknet/yolov3.weights"
-net = cv.dnn.readNetFromDarknet(modelConfiguration, modelWeights)
-net.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
-net.setPreferableTarget(cv.dnn.DNN_TARGET_CPU)
-
-initBB_ball = None
-initBB_person = None
-circleFound = False
-personFound = False
-shotLaunched = False
-
-outputs = []
+        tracker_rim = cv.TrackerCSRT_create()
 
 
-def findPerson(outputs, img):
-    hT, wT, cT = img.shape
-    bbox = []
-    classIds = []
-    confs = []
-    for output in outputs:
-        for det in output:
-            scores = det[5:]
-            classId = np.argmax(scores)
-            confidence = scores[classId]
-            if confidence > confThreshold:
-                w, h = int(det[2] * wT), int(det[3] * hT)
-                x, y = int((det[0] * wT) - w / 2), int((det[1] * hT) - h / 2)
-                bbox.append([x, y, w, h])
-                classIds.append(classId)
-                confs.append(float(confidence))
+# initBB_ball = None
+# initBB_person = None
+# circleFound = False
+# personFound = False
+# shotLaunched = False
+#
+# outputs = []
 
-    indices = cv.dnn.NMSBoxes(bbox, confs, confThreshold, nmsThreshold)
 
-    for i in indices:
-        i = i[0]
-        if i < 2:
-            box = bbox[i]
-            x, y, w, h = box[0], box[1], box[2], box[3]
-            return x, y, w, h
-            # print(x,y,w,h)
-            # cv.rectangle(img, (x, y), (x + w, y + h), (255, 0, 255), 2)
-            # cv.putText(img, f'{classNames[classIds[i]].upper()} {int(confs[i] * 100)}%',
-            #            (x, y - 10), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-        else:
-            return None
+# def findPerson(outputs, img):
+#     hT, wT, cT = img.shape
+#     bbox = []
+#     classIds = []
+#     confs = []
+#     for output in outputs:
+#         for det in output:
+#             scores = det[5:]
+#             classId = np.argmax(scores)
+#             confidence = scores[classId]
+#             if confidence > confThreshold:
+#                 w, h = int(det[2] * wT), int(det[3] * hT)
+#                 x, y = int((det[0] * wT) - w / 2), int((det[1] * hT) - h / 2)
+#                 bbox.append([x, y, w, h])
+#                 classIds.append(classId)
+#                 confs.append(float(confidence))
+#
+#     indices = cv.dnn.NMSBoxes(bbox, confs, confThreshold, nmsThreshold)
+#
+#     for i in indices:
+#         i = i[0]
+#         if i < 2:
+#             box = bbox[i]
+#             x, y, w, h = box[0], box[1], box[2], box[3]
+#             return x, y, w, h
+#             # print(x,y,w,h)
+#             # cv.rectangle(img, (x, y), (x + w, y + h), (255, 0, 255), 2)
+#             # cv.putText(img, f'{classNames[classIds[i]].upper()} {int(confs[i] * 100)}%',
+#             #            (x, y - 10), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+#         else:
+#             return None
 
 
 def findBall(gray_frame, rows):
@@ -148,94 +132,123 @@ def calculate_intersection(a0, a1, b0, b1):
 
 
 def calculate_angle(box1, box2):
-    point1 = [(box1[0] + box1[2])/2, box1[3]]
+    point1 = [(box1[0] + box1[2]) / 2, box1[3]]
     point2 = [(box2[0] + box2[2]) / 2, box2[1]]
     angle_rad = math.atan2(point2[1] - point1[1], point2[0] - point1[0])
     angle = math.degrees(angle_rad)
-    return  angle
+    return angle
 
 
-cap = cv.VideoCapture("test.mp4")
+cap = cv.VideoCapture("../shot_tests/shot1.mp4")
 overlap_values = []
+boxes = []
+ballFound = False
+personFound = False
+rimFound = False
+initBB_ball = None
+initBB_person = None
+initBB_rim = None
+
+count = 0
+drawing = False
+ix = 0
+iy = 0
+holder = []
+
+
+def draw(event, x, y, img, flag):
+    global ix, iy, drawing, holder
+    # Left Mouse Button Down Pressed
+    if event == 1:
+        drawing = True
+        ix = x
+        iy = y
+        holder.append([ix, iy])
+    if event == 0:
+        if drawing:
+            ix = x
+            iy = y
+            holder.append([ix, iy])
+    if event == 4:
+        drawing = False
+        holder = [holder[0], holder[len(holder) - 1]]
+
+
+def rect_coordinates(arr):
+    p1 = (arr[0][0], arr[0][1])
+    p2 = (arr[1][0], arr[1][1])
+    x_center = p1[0]
+    y_center = p1[1]
+    height = abs(p1[1] - p2[1])
+    width = abs(p1[0] - p2[0])
+
+    return x_center, y_center, width, height
+
 
 while True:
     success, img = cap.read()
-    key = cv.waitKey(1)
-    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    gray = cv.medianBlur(gray, 5)
-    rows = gray.shape[0]
+    key = cv.waitKey(0)
 
-    if key == ord('p'):
-        cv.waitKey(-1)  # wait until any key is pressed
+    if ballFound is False or personFound is False or rimFound is False:
+        key
+        print(holder)
 
-    if cv.waitKey(1) == 27:  # esc Key
-        break
-
-    # person detection block
-    if personFound is False:
-        blob = cv.dnn.blobFromImage(img, 1 / 255, (whT, whT), [0, 0, 0], 1, crop=False)
-        net.setInput(blob)
-        layersNames = net.getLayerNames()
-        outputNames = [(layersNames[i[0] - 1]) for i in net.getUnconnectedOutLayers()]
-        outputs = net.forward(outputNames)
-        BB_person = findPerson(outputs, img)
-
-        if BB_person is not None:
-            x_p, y_p, w_p, h_p = BB_person
-            initBB_person = (x_p, y_p, w_p, h_p * 1.25)
-            tracker_person.init(img, initBB_person)
-            personFound = True
-
-    if initBB_person is not None:
-        _, initBB_person = tracker_person.update(img)
-        # grab the new bounding box coordinates of the object
-        p1 = (int(initBB_person[0]), int(initBB_person[1]))
-        p2 = (int(initBB_person[0] + initBB_person[2]), int(initBB_person[1] + initBB_person[3]))
-        cv.rectangle(img, p1, p2, (255, 0, 0), 2, 1)
-        rect_person = [p1[0], p1[1], p2[0], p2[1]]
-
-    # ball detection block
-    if circleFound is False:
-        BB_ball = findBall(gray, rows)
-
-        if BB_ball is not None:
-            x_b, y_b, w_b, h_b = BB_ball
-            initBB_ball = (x_b, y_b, w_b, h_b)
+        if count == 0 and len(holder) > 0:
+            x, y, w, h = rect_coordinates(holder)
+            initBB_ball = (x, y, w, h)
             tracker_ball.init(img, initBB_ball)
-            circleFound = True
+            holder = []
+            ballFound = True
+            count += 1
+
+        elif count == 1 and len(holder) > 0:
+            x, y, w, h = rect_coordinates(holder)
+            initBB_person = (x, y, w, h)
+            tracker_person.init(img, initBB_person)
+            holder = []
+            personFound = True
+            count += 1
+
+        elif count == 2 and len(holder) > 0:
+            x, y, w, h = rect_coordinates(holder)
+            initBB_rim = (x, y, w, h)
+            tracker_rim.init(img, initBB_rim)
+            holder = []
+            rimFound = True
+            count += 1
 
     if initBB_ball is not None:
         _, initBB_ball = tracker_ball.update(img)
         # grab the new bounding box coordinates of the object
-        p1 = (int(initBB_ball[0]), int(initBB_ball[1]))
-        p2 = (int(initBB_ball[0] + initBB_ball[2]), int(initBB_ball[1] + initBB_ball[3]))
-        cv.rectangle(img, p1, p2, (255, 0, 0), 2, 1)
-        rect_ball = [p1[0], p1[1], p2[0], p2[1]]
+        point1 = (int(initBB_ball[0]), int(initBB_ball[1]))
+        point2 = (int(initBB_ball[0] + initBB_ball[2]), int(initBB_ball[1] + initBB_ball[3]))
+        cv.rectangle(img, point1, point2, (255, 0, 0), 2, 1)
+        rect_ball = [point1[0], point1[1], point2[0], point2[1]]
 
-    cv.imshow('Image', img)
+    if initBB_person is not None:
+        _, initBB_person = tracker_person.update(img)
+        # grab the new bounding box coordinates of the object
+        point1 = (int(initBB_person[0]), int(initBB_person[1]))
+        point2 = (int(initBB_person[0] + initBB_person[2]), int(initBB_person[1] + initBB_person[3]))
+        cv.rectangle(img, point1, point2, (255, 0, 0), 2, 1)
+        rect_person = [point1[0], point1[1], point2[0], point2[1]]
 
-    # This is where most of the analysis is done
-    if circleFound and personFound:
+    if initBB_rim is not None:
+        _, initBB_rim = tracker_rim.update(img)
+        # grab the new bounding box coordinates of the object
+        point1 = (int(initBB_rim[0]), int(initBB_rim[1]))
+        point2 = (int(initBB_rim[0] + initBB_rim[2]), int(initBB_rim[1] + initBB_rim[3]))
+        cv.rectangle(img, point1, point2, (255, 0, 0), 2, 1)
+        rect_rim = [point1[0], point1[1], point2[0], point2[1]]
 
-        overlap = get_overlap(rect_person, rect_ball)
+    # if key == ord('p'):
+    #     cv.waitKey(-1)  # wait until any key is pressed
 
-        if len(overlap_values) < 3:
-            overlap_values.append(overlap)
-        else:
-            overlap_values = overlap_values[1:]
-            overlap_values.append(overlap)
+    if cv.waitKey(1) == 27:  # esc Key
+        break
 
-
-        if sum(overlap_values) == 0 and shotLaunched is False:
-            angle = calculate_angle(rect_ball, rect_person)
-            outputs.append(angle)
-            shotLaunched = True
-            cv.waitKey(-1)
-
-        # box1 = rect_ball
-        # box2 = rect_person
-        # overlap_bool = overlap(box1, box2)
-        # print(overlap_percentage)
+    cv.imshow("basketball", img)
+    cv.setMouseCallback("basketball", draw)
 
 cap.release()
 cv.destroyAllWindows()

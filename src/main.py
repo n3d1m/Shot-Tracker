@@ -132,24 +132,46 @@ def calculate_angle(box1, box2):
     return angle_val
 
 
-def calculate_shot_values(f_count, fps, height_arr, h_l, conversion):
+def calculate_shot_values(f_count, fps, height_arr, h_l, conversion, bottom, r_count):
     distance = 4.572  # distance of free throw in meters
     gravity = 9.81
+    radius = 0.23  # radius of the rim
+    r_half = radius / 2
+    height = 3.048  # height of 10 foot net in m
+
     time_val = f_count / fps
+    release_time = r_count / fps
     h_max = min(height_arr)
     h_delta = abs(h_max - h_l) * conversion
+    h_peak = abs(h_max - bottom) * conversion
+
+    print(h_l * conversion)
+
+    calc_min = (r_half / (2 * radius)) * math.pow(1 - (r_half / radius), -0.5) + 2 * (
+            (height - h_l * conversion) / distance)
+    theta_min = math.degrees(math.atan(calc_min))
 
     v_x = distance / time_val
     v_y = math.sqrt(2 * gravity * h_delta)
-    v_delta = math.sqrt(math.pow(v_x, 2) + math.pow(v_y, 2))
-    theta = math.degrees(math.atan2(v_y, v_x))
+    v_delta = math.sqrt(v_x ** 2 + v_y ** 2)
+    release_angle = math.degrees(math.atan2(v_y, v_x))
+
+    calc_actual = (gravity*time_val - v_delta*math.degrees(math.sin(theta_min))) / (v_delta*math.degrees(math.cos(theta_min)))
+    theta_actual = math.degrees(math.atan(calc_actual))
+
+    if theta_actual < 0:
+        theta_actual = 90 - abs(theta_actual)
 
     return {
         'V_x': v_x,
         'V_y': v_y,
         'V': v_delta,
-        'Theta': theta
-         }
+        'Release Angle': release_angle,
+        'Peak': h_peak,
+        'Release Time': release_time,
+        'Minimum Angle of Entry': theta_min,
+        'Angle of Entry': theta_actual
+    }
 
 
 def rim_width(box):
@@ -178,7 +200,7 @@ def velocity_calc(arr, fps, pix_convert):
     print(v_x, pix_convert)
 
 
-cap = cv.VideoCapture('test.mp4')
+cap = cv.VideoCapture('../shot_tests/shot4.mp4')
 overlap_values_person = []
 overlap_values_rim = []
 outputs = []
@@ -194,6 +216,7 @@ pixel_to_distance = None
 bottom_y = None
 h_launch = None
 frame_count = 0
+release_count = 0
 ball_positions = []
 hit_rim = False
 
@@ -252,6 +275,10 @@ while True:
     # This is where most of the analysis is done
     if ballFound and personFound:
 
+        # measure the amount of frames until the shot is launched
+        if shotLaunched is False:
+            release_count += 1
+
         overlap1 = get_overlap(rect_person, rect_ball)
 
         if len(overlap_values_person) < 1:
@@ -277,7 +304,7 @@ while True:
 
             overlap2 = get_overlap(rect_rim, rect_ball)
 
-            if len(overlap_values_person) < 3:
+            if len(overlap_values_rim) < 3:
                 overlap_values_rim.append(overlap2)
             else:
                 overlap_values_rim = overlap_values_rim[1:]
@@ -285,11 +312,17 @@ while True:
 
             if sum(overlap_values_rim) != 0:
                 FPS = cap.get(cv.CAP_PROP_FPS)
-                print(ball_positions, frame_count, FPS)
+                # print(ball_positions, frame_count, FPS)
                 hit_rim = True
-                parameters = calculate_shot_values(frame_count, FPS, ball_positions, h_launch, pixel_to_distance)
+                parameters = calculate_shot_values(frame_count, FPS, ball_positions,
+                                                   h_launch, pixel_to_distance, bottom_y, release_count)
                 print(parameters)
                 cv.waitKey(-1)
+
+                if overlap_values_rim[2] > 1500:
+                    print('SHOT MADE')
+
+            # if sum(overlap_values_rim)
 
             # if frame_count == 2:
             #     velocity_calc(ball_positions, FPS, pixel_to_distance)
