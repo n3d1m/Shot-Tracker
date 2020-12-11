@@ -45,77 +45,6 @@ else:
         tracker_rim = cv.TrackerCSRT_create()
 
 
-# initBB_ball = None
-# initBB_person = None
-# circleFound = False
-# personFound = False
-# shotLaunched = False
-#
-# outputs = []
-
-
-# def findPerson(outputs, img):
-#     hT, wT, cT = img.shape
-#     bbox = []
-#     classIds = []
-#     confs = []
-#     for output in outputs:
-#         for det in output:
-#             scores = det[5:]
-#             classId = np.argmax(scores)
-#             confidence = scores[classId]
-#             if confidence > confThreshold:
-#                 w, h = int(det[2] * wT), int(det[3] * hT)
-#                 x, y = int((det[0] * wT) - w / 2), int((det[1] * hT) - h / 2)
-#                 bbox.append([x, y, w, h])
-#                 classIds.append(classId)
-#                 confs.append(float(confidence))
-#
-#     indices = cv.dnn.NMSBoxes(bbox, confs, confThreshold, nmsThreshold)
-#
-#     for i in indices:
-#         i = i[0]
-#         if i < 2:
-#             box = bbox[i]
-#             x, y, w, h = box[0], box[1], box[2], box[3]
-#             return x, y, w, h
-#             # print(x,y,w,h)
-#             # cv.rectangle(img, (x, y), (x + w, y + h), (255, 0, 255), 2)
-#             # cv.putText(img, f'{classNames[classIds[i]].upper()} {int(confs[i] * 100)}%',
-#             #            (x, y - 10), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-#         else:
-#             return None
-
-
-def findBall(gray_frame, rows):
-    circles = cv.HoughCircles(gray_frame, cv.HOUGH_GRADIENT, 1, rows / 8,
-                              param1=100, param2=30,
-                              minRadius=15, maxRadius=25)
-
-    if circles is not None:
-        circles = np.array(np.uint16(np.around(circles)))
-        for i in circles[0, :]:
-            radius = i[2]
-            x, y, w, h = i[0] - radius, i[1] - radius, radius * 2.25, radius * 2.25
-
-            return x, y, w, h
-
-    else:
-        return None
-
-
-def get_overlap(box_1, box_2):
-    # area_1 = float((box_1[2] - box_1[0]) * box_1[3] - box_1[1])
-    # area_2 = float((box_2[2] - box_2[0]) * box_2[3] - box_2[1])
-
-    width = calculate_intersection(box_1[0], box_1[2], box_2[0], box_2[2])
-    height = calculate_intersection(box_1[1], box_1[3], box_2[1], box_2[3])
-
-    area_delta = width * height
-
-    return area_delta
-
-
 def calculate_intersection(a0, a1, b0, b1):
     if a0 >= b0 and a1 <= b1:  # Contained
         intersection = a1 - a0
@@ -131,23 +60,110 @@ def calculate_intersection(a0, a1, b0, b1):
     return intersection
 
 
+def get_overlap(box_1, box_2):
+    width = calculate_intersection(box_1[0], box_1[2], box_2[0], box_2[2])
+    height = calculate_intersection(box_1[1], box_1[3], box_2[1], box_2[3])
+
+    area_delta = width * height
+
+    return area_delta
+
+
 def calculate_angle(box1, box2):
-    point1 = [(box1[0] + box1[2]) / 2, box1[3]]
+    point1 = [box1[0], box1[1]]
     point2 = [(box2[0] + box2[2]) / 2, box2[1]]
     angle_rad = math.atan2(point2[1] - point1[1], point2[0] - point1[0])
-    angle = math.degrees(angle_rad)
-    return angle
+    angle_val = math.degrees(angle_rad)
+    return angle_val
 
 
-cap = cv.VideoCapture("../shot_tests/shot1.mp4")
-overlap_values = []
-boxes = []
+def calculate_shot_values(f_count, fps, height_arr, h_l, conversion, bottom, r_count):
+    distance = 4.572  # distance of free throw in meters
+    gravity = 9.81
+    radius = 0.23  # radius of the rim
+    r_half = radius / 2
+    height = 3.048  # height of 10 foot net in m
+
+    time_val = f_count / fps
+    release_time = r_count / fps
+    h_max = min(height_arr)
+    h_delta = abs(h_max - h_l) * conversion
+    h_peak = abs(h_max - bottom) * conversion
+
+    print(h_l * conversion)
+
+    calc_min = (r_half / (2 * radius)) * math.pow(1 - (r_half / radius), -0.5) + 2 * (
+            (height - h_l * conversion) / distance)
+    theta_min = math.degrees(math.atan(calc_min))
+
+    v_x = distance / time_val
+    v_y = math.sqrt(2 * gravity * h_delta)
+    v_delta = math.sqrt(v_x ** 2 + v_y ** 2)
+    release_angle = math.degrees(math.atan2(v_y, v_x))
+
+    calc_actual = (gravity*time_val - v_delta*math.degrees(math.sin(theta_min))) / (v_delta*math.degrees(math.cos(theta_min)))
+    theta_actual = math.degrees(math.atan(calc_actual))
+
+    if theta_actual < 0:
+        theta_actual = 90 - abs(theta_actual)
+
+    return {
+        'V_x': v_x,
+        'V_y': v_y,
+        'V': v_delta,
+        'Release Angle': release_angle,
+        'Peak': h_peak,
+        'Release Time': release_time,
+        'Minimum Angle of Entry': theta_min,
+        'Angle of Entry': theta_actual
+    }
+
+
+def rim_width(box):
+    width = 0.46
+    height = 3.048
+    x_1 = box[0]
+    x_2 = box[2]
+    distance = abs(x_1 - x_2) * 0.8
+    conversion = width / distance
+    rim_height = height / conversion
+    y_bottom = round(box[1] + rim_height)
+
+    return conversion, y_bottom
+
+
+def velocity_calc(arr, fps, pix_convert):
+    starting_point = arr[0]
+    end_point = arr[1]
+    delta_time = 1 / fps
+
+    delta_x = abs(starting_point[0] - end_point[0])
+    delta_y = abs(starting_point[1] - end_point[1]) * pixel_to_distance
+    v_x = delta_x / delta_time
+    v_y = delta_y / delta_time
+
+    print(v_x, pix_convert)
+
+
+cap = cv.VideoCapture("../shot_tests/shot9.mp4")
+overlap_values_person = []
+overlap_values_rim = []
+outputs = []
+FPS = None
 ballFound = False
 personFound = False
 rimFound = False
 initBB_ball = None
 initBB_person = None
 initBB_rim = None
+shotLaunched = False
+pixel_to_distance = None
+bottom_y = None
+h_launch = None
+frame_count = 0
+release_count = 0
+ball_positions = []
+hit_rim = False
 
 count = 0
 drawing = False
@@ -240,6 +256,58 @@ while True:
         point2 = (int(initBB_rim[0] + initBB_rim[2]), int(initBB_rim[1] + initBB_rim[3]))
         cv.rectangle(img, point1, point2, (255, 0, 0), 2, 1)
         rect_rim = [point1[0], point1[1], point2[0], point2[1]]
+
+        if pixel_to_distance is None:
+            pixel_to_distance, bottom_y = rim_width(rect_rim)
+
+    if ballFound and personFound:
+
+        # measure the amount of frames until the shot is launched
+        if shotLaunched is False:
+            release_count += 1
+
+        overlap1 = get_overlap(rect_person, rect_ball)
+
+        if len(overlap_values_person) < 4:
+            overlap_values_person.append(overlap1)
+        else:
+            overlap_values_person = overlap_values_person[1:]
+            overlap_values_person.append(overlap1)
+
+        person_bottom = rect_person[3]
+        ball_top = rect_ball[1]
+
+        if sum(overlap_values_person) == 0 and shotLaunched is False and person_bottom > ball_top:
+            # angle = calculate_angle(rect_ball, rect_person)
+            # outputs.append(angle)
+            shotLaunched = True
+            h_launch = bottom_y - rect_ball[3]
+            print('SHOT LAUNCHED', bottom_y, rect_ball)
+
+        if shotLaunched:
+            if hit_rim is False:
+                frame_count += 1
+                ball_positions.append(rect_ball[3])
+
+            overlap2 = get_overlap(rect_rim, rect_ball)
+
+            if len(overlap_values_rim) < 2:
+                overlap_values_rim.append(overlap2)
+            else:
+                overlap_values_rim = overlap_values_rim[1:]
+                overlap_values_rim.append(overlap2)
+
+            if sum(overlap_values_rim) != 0:
+                FPS = cap.get(cv.CAP_PROP_FPS)
+                # print(ball_positions, frame_count, FPS)
+                hit_rim = True
+                parameters = calculate_shot_values(frame_count, FPS, ball_positions,
+                                                   h_launch, pixel_to_distance, bottom_y, release_count)
+                print(parameters)
+                cv.waitKey(-1)
+
+                if overlap_values_rim[2] > 1500:
+                    print('SHOT MADE')
 
     # if key == ord('p'):
     #     cv.waitKey(-1)  # wait until any key is pressed

@@ -156,7 +156,8 @@ def calculate_shot_values(f_count, fps, height_arr, h_l, conversion, bottom, r_c
     v_delta = math.sqrt(v_x ** 2 + v_y ** 2)
     release_angle = math.degrees(math.atan2(v_y, v_x))
 
-    calc_actual = (gravity*time_val - v_delta*math.degrees(math.sin(theta_min))) / (v_delta*math.degrees(math.cos(theta_min)))
+    calc_actual = (gravity * time_val - v_delta * math.degrees(math.sin(theta_min))) / (
+                v_delta * math.degrees(math.cos(theta_min)))
     theta_actual = math.degrees(math.atan(calc_actual))
 
     if theta_actual < 0:
@@ -200,7 +201,16 @@ def velocity_calc(arr, fps, pix_convert):
     print(v_x, pix_convert)
 
 
-cap = cv.VideoCapture('../shot_tests/shot4.mp4')
+cap = cv.VideoCapture('../shots/free_throw.mp4')
+frame_width = int(cap.get(3))
+frame_height = int(cap.get(4))
+size = (frame_width, frame_height)
+# Below VideoWriter object will create
+# a frame of above defined The output
+# is stored in 'filename.avi' file.
+result = cv.VideoWriter('display.avi',
+                        cv.VideoWriter_fourcc(*'MJPG'),
+                        10, size)
 overlap_values_person = []
 overlap_values_rim = []
 outputs = []
@@ -317,7 +327,7 @@ while True:
                 parameters = calculate_shot_values(frame_count, FPS, ball_positions,
                                                    h_launch, pixel_to_distance, bottom_y, release_count)
                 print(parameters)
-                cv.waitKey(-1)
+                #cv.waitKey(-1)
 
                 if overlap_values_rim[2] > 1500:
                     print('SHOT MADE')
@@ -329,6 +339,21 @@ while True:
             #     cv.waitKey(-1)
 
     cv.imshow("basketball", img)
+
+    if success:
+
+        # Write the frame into the
+        # file 'filename.avi'
+        result.write(img)
+
+        # Display the frame
+        # saved in the file
+        cv.imshow('basketball', img)
+
+        # Press S on keyboard
+        # to stop the process
+        if cv.waitKey(1) & 0xFF == ord('s'):
+            break
     # cv.waitKey(0)
     if cv.waitKey(1) == 27:  # esc Key
         break
